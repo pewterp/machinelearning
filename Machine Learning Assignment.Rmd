@@ -1,7 +1,7 @@
 ---
 title: "Machine Learning Exercise Regime"
 author: "Simeon"
-date: "Saturday, August 22, 2015"
+date: "Sunday, September 20, 2015"
 output: html_document
 ---
 
@@ -30,6 +30,7 @@ if(!file.exists("./machinelearning")){dir.create("./machinelearning")}
 filename <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 download.file(filename, destfile = "./machinelearning/Trainingset.csv")
 Training <- read.csv("C:/Users/Simeon/Desktop/R Language/machinelearning/Trainingset.csv", na.strings=c("NA","#DIV/0!",""))
+Training <- Training[,colSums(is.na(Training)) == FALSE]
 
 
 setwd("C:/Users/Simeon/Desktop/R Language/machinelearning")
@@ -40,6 +41,12 @@ if(!file.exists("./machinelearning")){dir.create("./machinelearning")}
 filename <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 download.file(filename, destfile = "./machinelearning/Testset.csv")
 Test <- read.csv("C:/Users/Simeon/Desktop/R Language/machinelearning/Testset.csv", na.strings=c("NA","#DIV/0!",""))
+Test <- Test[,colSums(is.na(Test)) == FALSE]
+
+dimTraining <- dim(Training)
+dimTest <- dim(Test)
+Training <- Training[,6:dimTraining[2]]
+Test <- Test[,6:dimTest[2]]
 
 ```
 
@@ -49,24 +56,19 @@ Test <- read.csv("C:/Users/Simeon/Desktop/R Language/machinelearning/Testset.csv
 library(caret)
 library(randomForest)
 
+unwantedColumns <- nearZeroVar(Training, saveMetrics=TRUE)$nzv
+for ( i in 1:dim(Training)[2]  )
+  if (sum(is.na(Training[,i]))/dimTraining[1] > 0.8)
+    unwantedColumns[i] <- TRUE
+
+Training <- Training[, unwantedColumns==FALSE]
+Test <- Test[, unwantedColumns==FALSE]
+
+
 PartitionedTrain <- createDataPartition(y=Training$classe, p=0.6, list=FALSE)
 NewTraining <- Training[PartitionedTrain, ]
 NewTesting <- Training[-PartitionedTrain, ]
 
-DuplicateTraining <- NewTraining
-
-for(i in 1:length(NewTraining)) {
-        if( sum( is.na( NewTraining[, i] ) ) /nrow(NewTraining) >= .6 ) {
-        for(j in 1:length(DuplicateTraining)) {
-            if( length( grep(names(NewTraining[i]), names(DuplicateTraining)[j]) ) ==1)  { 
-                DuplicateTraining <- DuplicateTraining[ , -j]
-            }   
-        } 
-    }
-}
-
-NZV <- nearZeroVar(NewTraining, saveMetrics=TRUE)
-if (any(NZV$nzv)) nzv else message("Variables have no near zero variance")
 
 ```
 
@@ -75,7 +77,44 @@ if (any(NZV$nzv)) nzv else message("Variables have no near zero variance")
 ```{r, echo=TRUE}
 
 library(rpart) 
-RPartitionedFit <- rpart(classe ~ ., data=NewTraining, method="class")
+TreeModel <- rpart(classe ~ ., data=NewTraining, method = "class")
+TreePrediction <- predict(TreeModel, NewTesting, type = "class")
+
 library(rattle)
-fancyRpartPlot(RPartitionedFit)
+fancyRpartPlot(TreeModel)
+confusionMatrix(TreePrediction, NewTesting$classe)
+```
+
+# Building Random Forest
+
+```{r, echo=TRUE}
+
+ForestModel <- randomForest(classe ~., data=NewTraining, method = "class")
+ForestPrediction <- predict(ForestModel, NewTesting, type = "class")
+confusionMatrix(ForestPrediction, NewTesting$classe)
+```
+
+# Final Prediction Model
+
+We used Random Forest Model as it had a much higher accuracy (as observed in confusionMatrix).
+
+```{r, echo=TRUE}
+FinalPrediction <- predict(ForestModel, Test, type = "class")
+FinalPrediction
+```
+
+# Writing Files to apply algorithm to 20 Test Cases
+
+```{r, echo=FALSE}
+
+pml_write_files = function(x) {
+    n = length(x)
+    for (i in 1:n) {
+        filename = paste0("problem_id_", i, ".txt")
+        write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+            col.names = FALSE)
+    }
+}
+
+pml_write_files(FinalPrediction)
 ```
